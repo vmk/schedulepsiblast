@@ -74,8 +74,8 @@ public class SchedulePsiblast {
 			version = "undetermined";
 		}
 		System.out.println();
-		System.out.println("+-++-++-++-++-++-++-++-++-++-++-++-++-++-++-++-+");
-		System.out.println("|S||c||h||e||d||u||l||e||I||n||t||e||r||p||r||o|");
+		System.out.println("+-++-++-++-++-++-++-++-++-++-++-++-++-++-++-++-+");		
+		System.out.println("|S||c||h||e||d||u||l||e||P||s||i||b||l||a||s||t|");
 		System.out.println("+-++-++-++-++-++-++-++-++-++-++-++-++-++-++-++-+");
 		if (version != null && st.countTokens() >= 2) {
 			System.out.print("version: " + st.nextToken() + " build " + st.nextToken() + "\n");
@@ -246,7 +246,7 @@ public class SchedulePsiblast {
 				}
 
 				// Projectid, Relicid, Clientid
-				String recipeId = "[INTERPRO]_[" + projectid + "]" + "_[" + getProperty(PropertyKeys.CLIENTID) + "]_[" + sampleFile.getName() + "]";
+				String recipeId = "[PSIBLAST]_[" + projectid + "]" + "_[" + getProperty(PropertyKeys.CLIENTID) + "]_[" + sampleFile.getName() + "]";
 
 				Recipe recipe = new Recipe(recipeId);
 
@@ -258,204 +258,43 @@ public class SchedulePsiblast {
 				s.add(cm);
 				recipe.add(s);
 
-				s = new Step("run_interpro");
+				s = new Step("run_psiblast");
 				// Run interpro
 				RunBashScriptOperation bco = new RunBashScriptOperation();
 				StringBuffer script = new StringBuffer();
-				//#Interpro run
-				// ./interproscan-5-RC7/interproscan.sh -goterms --disable-precalc -pa -f TSV -i $PWD/5f341d1761fdef400389340116fedccf.fasta -o $PWD/5f341d1761fdef400389340116fedccf.interpro
-				
+				//Psiblast run
+				// ./psiblast -db db/uniref90 -outfmt 5 -query example.fasta -out example.psiblast.xml
 				String identifier = sampleFileName.replaceAll(".fasta", "");
 				script.append("#!/bin/bash\n");
-				script.append("./interproscan-5-RC7/interproscan.sh -goterms --disable-precalc -pa -f TSV -i " + sampleFileName + " -o " + identifier + ".interpro\n");
+				script.append("./psiblast/psiblast -db uniref90 --disable-precalc -outfmt 5 -query " + sampleFileName + " -out " + identifier + ".psiblast.xml\n");
 				bco.setScript(script.toString());
 
 				s.add(bco);
 				recipe.add(s);
 
 				// Check interpro output file exists
-				s = new Step("check_interpro_output");
+				s = new Step("check_psiblast_output");
 				CheckFileExistsOperation cfeo = new CheckFileExistsOperation();
 				cfeo.setPath(identifier + ".interpro");
 				
 				s.add(cfeo);
 				recipe.add(s);
 				
-				// Merge output
-				s = new Step("merge_interpro_results");
-				// Merge output cat $PWD/5f341d1761fdef400389340116fedccf.fasta $PWD/5f341d1761fdef400389340116fedccf.interpro > $PWD/5f341d1761fdef400389340116fedccf.output
+				// Zip output
+				s = new Step("zip_results");
 				bco = new RunBashScriptOperation();
 				script = new StringBuffer();
 				script.append("#!/bin/bash\n");
-				script.append("cat " + sampleFileName + " " + identifier + ".interpro > " + identifier + ".output\n");
+				script.append("gzip " + identifier + ".psiblast.xml\n");
 				bco.setScript(script.toString());
 				
 				s.add(bco);
 				recipe.add(s);
 
-				// Copy back
-
-				/*
-				// Unzip binaries and make executable plink and snptest
-				Step s = new Step("setup_binaries");
-				RunBashScriptOperation bco = new RunBashScriptOperation();
-				StringBuffer script = new StringBuffer();
-				script.append("#!/bin/bash\n");
-				script.append("unzip -o binaries.zip\n");
-				script.append("chmod +x plink\n");
-				script.append("chmod +x snptest_v2.4.1\n");
-				bco.setScript(script.toString());
-
-				s.add(bco);
-				recipe.add(s);
-
-				// Copy in relic
-				s = new Step("copyin_relic");
-				CopyInOperation co = new CopyInOperation();
-				co.setRelicId(r.getIdentifier());
-				co.setNumTries(3);
-
-				s.add(co);
-				recipe.add(s);
-
-				// Copy in user files
-				s = new Step("copyin_sample");
-				CopyInMongoFile cm = new CopyInMongoFile();
-				cm.setHostname(getProperty(PropertyKeys.JHOST));
-				cm.setPort(Integer.parseInt(getProperty(PropertyKeys.JPORT)));
-				cm.setDbName(getProperty(PropertyKeys.JDBNAME));
-				if (Boolean.parseBoolean(getProperty(PropertyKeys.JAUTH))) {
-					cm.setAuthCredentials(getProperty(PropertyKeys.JUSER), getProperty(PropertyKeys.JPASS));
-				}
-				cm.setFileName(sampleFileName);
-
-				s.add(cm);
-				recipe.add(s);
-
-				// Optional copy in cov
-				if (covarFile != null && covarFile.exists()) {
-					s = new Step("copyin_covar");
-					String covarFileName = "[GWAS]_[" + projectid + "]" + "_[" + getProperty(PropertyKeys.CLIENTID) + "]_[" + covarFile.getName() + "]";
-					cm = new CopyInMongoFile();
-					cm.setHostname(getProperty(PropertyKeys.JHOST));
-					cm.setPort(Integer.parseInt(getProperty(PropertyKeys.JPORT)));
-					cm.setDbName(getProperty(PropertyKeys.JDBNAME));
-					if (Boolean.parseBoolean(getProperty(PropertyKeys.JAUTH))) {
-						cm.setAuthCredentials(getProperty(PropertyKeys.JUSER), getProperty(PropertyKeys.JPASS));
-					}
-					cm.setFileName(covarFileName);
-
-					s.add(cm);
-					recipe.add(s);
-				}
-
-				// Do the work
-				if (snptest) {
-					if (covarFile != null && covarFile.exists()) {
-						// Run snptest
-						s = new Step("run_snptest");
-						bco = new RunBashScriptOperation();
-						script = new StringBuffer();
-						script.append("#!/bin/bash\n");
-						String sampleFileNameSnptest = sampleFileName.replaceAll("\\[", "\\\\[");
-						command = "./snptest_v2.4.1 -data " + r.getFileName() + " " + sampleFileNameSnptest + " -frequentist 1 -pheno pheno1 -method score -hwe -cov_all " + userOptions + " -log " + recipeId + ".screen -o " + recipeId + "\n";
-						script.append(command);
-						bco.setScript(script.toString());
-
-						s.add(bco);
-						recipe.add(s);
-					} else {
-
-						// Run snptest
-						s = new Step("run_snptest");
-						bco = new RunBashScriptOperation();
-						script = new StringBuffer();
-						script.append("#!/bin/bash\n");
-						String sampleFileNameSnptest = sampleFileName.replaceAll("\\[", "\\\\[");
-						command = "./snptest_v2.4.1 -data " + r.getFileName() + " " + sampleFileNameSnptest + " -frequentist 1 -pheno pheno1 -method score -hwe " + userOptions + " -log " + recipeId + ".screen -o " + recipeId + "\n";
-						script.append(command);
-						bco.setScript(script.toString());
-
-						s.add(bco);
-						recipe.add(s);
-
-					}
-				} else if (plink) {
-					if (covarFile != null && covarFile.exists()) {
-						String covarFileName = "[GWAS]_[" + projectid + "]" + "_[" + getProperty(PropertyKeys.CLIENTID) + "]_[" + covarFile.getName() + "]";
-						String covarFileNamePlink = covarFileName.replaceAll("[", "\\\\[");
-						String sampleFileNamePlink = sampleFileName.replaceAll("\\[", "\\\\[");
-						if (useLog) {
-							// Run plink
-							s = new Step("run_plink");
-							bco = new RunBashScriptOperation();
-							script = new StringBuffer();
-							script.append("#!/bin/bash\n");
-							command = "./plink --dosage " + r.getFileName() + " Zin noheader skip0=1 skip1=1 format=3 --fam " + sampleFileNamePlink + " --covar " + covarFileNamePlink + " --logistic " + userOptions + " --noweb --out " + recipeId + "\n";
-							script.append(command);
-							bco.setScript(script.toString());
-
-							s.add(bco);
-							recipe.add(s);
-						} else {
-							// Run plink
-							s = new Step("run_plink");
-							bco = new RunBashScriptOperation();
-							script = new StringBuffer();
-							script.append("#!/bin/bash\n");
-							command = "./plink --dosage " + r.getFileName() + " Zin noheader skip0=1 skip1=1 format=3 --fam " + sampleFileNamePlink + " --covar " + covarFileNamePlink + " --linear " + userOptions + " --noweb --out " + recipeId + "\n";
-							script.append(command);
-							bco.setScript(script.toString());
-
-							s.add(bco);
-							recipe.add(s);
-						}
-					} else {
-						String sampleFileNamePlink = sampleFileName.replaceAll("\\[", "\\\\[");
-						if (useLog) {
-							// Run plink
-							s = new Step("run_plink");
-							bco = new RunBashScriptOperation();
-							script = new StringBuffer();
-							script.append("#!/bin/bash\n");
-							command = "./plink --dosage " + r.getFileName() + " Zin noheader skip0=1 skip1=1 format=3 --fam " + sampleFileNamePlink + " --logistic " + userOptions + " --noweb --out " + recipeId + "\n";
-							script.append(command);
-							bco.setScript(script.toString());
-
-							s.add(bco);
-							recipe.add(s);
-						} else {
-							// Run plink
-							s = new Step("run_plink");
-							bco = new RunBashScriptOperation();
-							script = new StringBuffer();
-							script.append("#!/bin/bash\n");
-							command = "./plink --dosage " + r.getFileName() + " Zin noheader skip0=1 skip1=1 format=3 --fam " + sampleFileNamePlink + " --linear " + userOptions + " --noweb --out " + recipeId + "\n";
-							script.append(command);
-							bco.setScript(script.toString());
-
-							s.add(bco);
-							recipe.add(s);
-						}
-					}
-				}
-				*/
-				// Tar.gz output
-				//				s = new Step("zip_output");
-				//				String escapedRid = recipeId.replaceAll("\\[", "\\\\[");
-				//				bco = new RunBashScriptOperation();
-				//				script = new StringBuffer();
-				//				script.append("#!/bin/bash\n");
-				//				script.append("tar -cvzf " + recipeId + ".tar.gz " + escapedRid + "*\n");
-				//				bco.setScript(script.toString());
-				//
-				//				s.add(bco);
-				//				recipe.add(s);
-
 				// Copy output to mongo
 				s = new Step("copyout_result");
 				CopyOutMongoFile cmo = new CopyOutMongoFile();
-				cmo.setFileName(identifier + ".output");
+				cmo.setFileName(identifier + ".psiblast.xml.gz");
 
 				s.add(cmo);
 				recipe.add(s);
