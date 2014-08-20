@@ -29,7 +29,7 @@ import com.mongodb.gridfs.GridFSDBFile;
 import com.mongodb.gridfs.GridFSInputFile;
 
 public class SchedulePsiblast {
-	private static String PROPERTIES = "scheduleinterpro.properties";
+	private static String PROPERTIES = "schedulepsiblast.properties";
 
 	public enum PropertyKeys {
 		CLIENTID("clientid", ""), RHOST("relic.hostname", ""), RPORT("relic.port", ""), RDBNAME("relic.dbname", ""), RAUTH("relic.auth", "false"), RUSER("relic.user", ""), RPASS("relic.pass", ""), JHOST("rite.hostname", ""), JPORT("rite.port", ""), JDBNAME("rite.dbname", ""), JAUTH("rite.auth", "false"), JUSER("rite.user", ""), JPASS("rite.pass", "");
@@ -130,8 +130,14 @@ public class SchedulePsiblast {
 				List<GridFSDBFile> find = gfs.find(q);
 				for (GridFSDBFile file : find) {
 					// Check recipe is complete and not failed
-					System.out.println("Downloading: " + file.getFilename());
-					file.writeTo(new File(file.getFilename()));
+					File f = new File(file.getFilename());
+					if(f.exists()) {
+						System.out.println("File already exists. Not downloading: " + file.getFilename() + ". Remove it first before downloading again.");
+					} else {
+						System.out.println("Downloading: " + file.getFilename());
+						file.writeTo(f);						
+					}
+					
 				}
 				mongo.close();
 			} else if (optionsInEffect.has(optionParser.report) && optionsInEffect.has(optionParser.projectId)) {
@@ -182,19 +188,6 @@ public class SchedulePsiblast {
 			} else if (optionsInEffect.has(optionParser.retract) && optionsInEffect.has(optionParser.projectId)) {
 				String projectid = optionsInEffect.valueOf(optionParser.projectId);
 				System.out.println("Deleting jobs for project: " + projectid + "...");
-
-				System.out.println("Removing jobs...");
-				MongoRecipeStore mrs;
-				if (Boolean.parseBoolean(getProperty(PropertyKeys.JAUTH))) {
-					mrs = new MongoRecipeStore(getProperty(PropertyKeys.JHOST), Integer.parseInt(getProperty(PropertyKeys.JPORT)), getProperty(PropertyKeys.JDBNAME), "recipes", getProperty(PropertyKeys.JUSER), getProperty(PropertyKeys.JPASS));
-				} else {
-					mrs = new MongoRecipeStore(getProperty(PropertyKeys.JHOST), Integer.parseInt(getProperty(PropertyKeys.JPORT)), getProperty(PropertyKeys.JDBNAME), "recipes");
-				}
-				
-				//String recipeId = ".*" + projectid + "\\].*" + getProperty(PropertyKeys.CLIENTID).replaceAll("-", "\\-") + ".*";
-				String recipeId = ".*" + getProperty(PropertyKeys.CLIENTID).replaceAll("-", "\\-") + ".*";
-				mrs.removeRecipe(recipeId);
-				
 				System.out.println("Removing user and generated files...");
 				String host = getProperty(PropertyKeys.JHOST);
 				int port = Integer.parseInt(getProperty(PropertyKeys.JPORT));
@@ -213,6 +206,13 @@ public class SchedulePsiblast {
 					System.out.println("Removing: " + file.getFilename());
 					gfs.remove(ObjectId.massageToObjectId(file.getId()));
 				}
+				System.out.println("Removing jobs...");
+				
+				String recipeId = ".*" + projectid + "\\].*" + getProperty(PropertyKeys.CLIENTID).replaceAll("-", "\\-") + ".*";
+				DBCollection recipeCollection = db.getCollection("recipes");
+				q = new BasicDBObject();
+				q.put("recipe", new BasicDBObject("$regex", recipeId));
+				recipeCollection.remove(q);
 				mongo.close();
 			} else if (optionsInEffect.has(optionParser.projectId) && optionsInEffect.has(optionParser.sampleFile)) {
 				String projectid = optionsInEffect.valueOf(optionParser.projectId);
@@ -230,7 +230,7 @@ public class SchedulePsiblast {
 					db.authenticate(getProperty(PropertyKeys.JUSER), getProperty(PropertyKeys.JPASS).toCharArray());
 				}
 				GridFS gfs = new GridFS(db);
-				String sampleFileName = "[INTERPRO]_[" + projectid + "]" + "_[" + getProperty(PropertyKeys.CLIENTID) + "]_[" + sampleFile.getName() + "]";
+				String sampleFileName = "[PSIBLAST]_[" + projectid + "]" + "_[" + getProperty(PropertyKeys.CLIENTID) + "]_[" + sampleFile.getName() + "]";
 				GridFSInputFile gsampleFile = gfs.createFile(sampleFile);
 				gsampleFile.setFilename(sampleFileName);
 				gsampleFile.save();
@@ -266,7 +266,7 @@ public class SchedulePsiblast {
 				// ./psiblast -db db/uniref90 -outfmt 5 -query example.fasta -out example.psiblast.xml
 				String identifier = sampleFileName.replaceAll(".fasta", "");
 				script.append("#!/bin/bash\n");
-				script.append("./psiblast/psiblast -db uniref90 --disable-precalc -outfmt 5 -query " + sampleFileName + " -out " + identifier + ".psiblast.xml\n");
+				script.append("./psiblast/psiblast -db db/uniref90 --disable-precalc -outfmt 5 -query " + sampleFileName + " -out " + identifier + ".psiblast.xml\n");
 				bco.setScript(script.toString());
 
 				s.add(bco);
@@ -275,7 +275,7 @@ public class SchedulePsiblast {
 				// Check interpro output file exists
 				s = new Step("check_psiblast_output");
 				CheckFileExistsOperation cfeo = new CheckFileExistsOperation();
-				cfeo.setPath(identifier + ".interpro");
+				cfeo.setPath(identifier + ".psiblast.xml");
 				
 				s.add(cfeo);
 				recipe.add(s);

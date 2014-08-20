@@ -26,7 +26,6 @@ public class SchedulePsiblastOptionParser extends OptionParser {
 		projectIdOption.add("id");
 		projectIdOption.add("projectid");
 		
-		
 		ArrayList<String> sampleFileOption = new ArrayList<String>();
 		sampleFileOption.add("s");
 		sampleFileOption.add("f");
